@@ -6,12 +6,11 @@ Se carga el archivo inicial llamado "crime_spatial_course.gpkg" y se procede a f
 ```{r setup, include=FALSE}
 # Evitar notación científica en todo el documento
 options(scipen = 999)
-```
-```{r, message=FALSE, warning=FALSE}
 #| echo : false
 #| include: false
 source('setup.R')
-
+```
+```{r, message=FALSE, warning=FALSE}
 # Load the dataset
 delitos_data <- st_read("data/spatial/crime_spatial_course.gpkg")
 delitos_data_limpio <- delitos_data %>%
@@ -250,7 +249,7 @@ print(g_cap_vs_nocap_tasa_final)
 ```
 Este gráfico solo refuerza lo que se entiende, las capitales son mas inseguras que los municipios aledaños en los departamentos, se destaca únicamente como el indicador de homicidios no sigue esta tendencia.
 
-###Metodologia para posteriores analisis.
+### Metodologia para posteriores analisis.
 Dado el análisis anterior, donde es notable la influencia de la capital en los indicadores generales del departamento, el analista considera importante hacer esta distinción antes de poder sacar conclusiones mas elaboradas, por lo cual se hará la comparación de los datos por capital y departamento de manera independiente.
 Por preferencia del Analista, se escoge el departamento del Atlántico y la Capital de Barranquilla para hacer un análisis mas detallado.
 
@@ -583,7 +582,6 @@ modelo_atlnc <- lm(sum_24HP ~ ., data = atlnc_data)
 ```
 ```{r}
 vif_baq <- vif(modelo_baq)
-
 vif_atlnc <- vif(modelo_atlnc)
 ```
 
@@ -886,6 +884,546 @@ plot(moran_mc, main = "Prueba de Monte Carlo - Moran's I")
 ```
 
 Los resultados del Moran’s I global y su validación mediante prueba de Monte Carlo confirman de manera robusta que los delitos en Barranquilla presentan un patrón de autocorrelación espacial significativa. Este hallazgo valida el uso de métodos espaciales como Local Moran para identificar focos delictivos, y sugiere que las intervenciones en seguridad pública deben ser diseñadas considerando la estructura espacial del crimen, no solo los conteos agregados.
+
+
+# Analisis Especifico
+```{r}
+# Transformar proyección y centrar geometría
+Delitos_Barranquilla <- Delitos_Barranquilla %>%
+  st_transform(4326)
+
+crear_centroides_con_total <- function(data, vars) {
+  data %>%
+    st_centroid() %>%
+    mutate(valor = rowSums(across(all_of(vars)), na.rm = TRUE)) %>%
+    filter(valor > 0)
+}
+```
+
+```{r}
+centros_hp  <- crear_centroides_con_total(Delitos_Barranquilla, c("sum_22HP", "sum_23HP", "sum_24HP"))
+centros_hr  <- crear_centroides_con_total(Delitos_Barranquilla, c("sum_22HR", "sum_23HR", "sum_24HR"))
+centros_hc  <- crear_centroides_con_total(Delitos_Barranquilla, c("sum_22HC", "sum_23HC", "sum_24HC"))
+centros_ha  <- crear_centroides_con_total(Delitos_Barranquilla, c("sum_22HA", "sum_23HA", "sum_24HA"))
+centros_hm  <- crear_centroides_con_total(Delitos_Barranquilla, c("sum_22HM", "sum_23HM", "sum_24HM"))
+centros_hom <- crear_centroides_con_total(Delitos_Barranquilla, c("sum_22HOM", "sum_23HOM", "sum_24HOM"))
+centros_total <- crear_centroides_con_total(Delitos_Barranquilla, grep("^sum_", names(Delitos_Barranquilla), value = TRUE))
+
+```
+
+```{r}
+library(leaflet.extras)
+gradiente_personalizado <- c("0.2" = "yellow", "0.5" = "orange", "1.0" = "red")
+
+# Función para agregar heatmap
+agregar_heatmap <- function(mapa, datos, nombre_capa) {
+  addHeatmap(
+    map = mapa,
+    data = datos,
+    lng = ~st_coordinates(datos)[,1],
+    lat = ~st_coordinates(datos)[,2],
+    intensity = ~(valor)^4,
+    radius = 25,
+    blur = 30,
+    group = nombre_capa,
+    max = max((datos$valor)^2, na.rm = TRUE),
+    gradient = gradiente_personalizado
+  )
+}
+
+# Crear mapa base
+mapa <- leaflet() %>%
+  addProviderTiles(providers$CartoDB.Positron)
+
+# Agregar todas las capas de heatmap
+mapa <- mapa %>%
+  agregar_heatmap(centros_hp,  "Hurto a Personas") %>%
+  agregar_heatmap(centros_hr,  "Hurto a Residencias") %>%
+  agregar_heatmap(centros_hc,  "Hurto a Comercio") %>%
+  agregar_heatmap(centros_ha,  "Hurto a Automotores") %>%
+  agregar_heatmap(centros_hm,  "Hurto a Motocicletas") %>%
+  agregar_heatmap(centros_hom, "Homicidios") %>%
+  agregar_heatmap(centros_total, "Total Delitos")
+
+# Añadir control de capas
+mapa <- mapa %>%
+  addLayersControl(
+    baseGroups = c("Hurto a Personas", "Hurto a Residencias", "Hurto a Comercio",
+                   "Hurto a Automotores", "Hurto a Motocicletas", "Homicidios", "Total Delitos"),
+    options = layersControlOptions(collapsed = FALSE)
+  )
+
+# Mostrar mapa
+mapa
+```
+
+```{r,warning=FALSE}
+crear_centroides_con_total <- function(data, vars) {
+  data %>%
+    st_centroid() %>%
+    mutate(valor = rowSums(across(all_of(vars)), na.rm = TRUE)) %>%
+    filter(valor > 0)
+}
+
+# Crear datasets de centroides
+centros_hp_zmb  <- crear_centroides_con_total(Delitos_ZonaMetBaq, c("sum_22HP", "sum_23HP", "sum_24HP"))
+centros_hr_zmb  <- crear_centroides_con_total(Delitos_ZonaMetBaq, c("sum_22HR", "sum_23HR", "sum_24HR"))
+centros_hc_zmb  <- crear_centroides_con_total(Delitos_ZonaMetBaq, c("sum_22HC", "sum_23HC", "sum_24HC"))
+centros_ha_zmb  <- crear_centroides_con_total(Delitos_ZonaMetBaq, c("sum_22HA", "sum_23HA", "sum_24HA"))
+centros_hm_zmb  <- crear_centroides_con_total(Delitos_ZonaMetBaq, c("sum_22HM", "sum_23HM", "sum_24HM"))
+centros_hom_zmb <- crear_centroides_con_total(Delitos_ZonaMetBaq, c("sum_22HOM", "sum_23HOM", "sum_24HOM"))
+centros_total_zmb <- crear_centroides_con_total(
+  Delitos_ZonaMetBaq,
+  grep("^sum_", names(Delitos_ZonaMetBaq), value = TRUE)
+)
+
+```
+
+```{r}
+# Gradiente amarillo → naranja → rojo
+gradiente_personalizado <- c("0.2" = "yellow", "0.5" = "orange", "1.0" = "red")
+
+# Función para agregar capa heatmap
+agregar_heatmap <- function(mapa, datos, nombre_capa) {
+  addHeatmap(
+    map = mapa,
+    data = datos,
+    lng = ~st_coordinates(datos)[,1],
+    lat = ~st_coordinates(datos)[,2],
+    intensity = ~(valor)^4,
+    radius = 25,
+    blur = 30,
+    group = nombre_capa,
+    max = max((datos$valor)^2, na.rm = TRUE),
+    gradient = gradiente_personalizado
+  )
+}
+
+# Crear mapa base
+mapa_zmb <- leaflet() %>%
+  addProviderTiles(providers$CartoDB.Positron)
+
+# Agregar capas
+mapa_zmb <- mapa_zmb %>%
+  agregar_heatmap(centros_hp_zmb,  "Hurto a Personas") %>%
+  agregar_heatmap(centros_hr_zmb,  "Hurto a Residencias") %>%
+  agregar_heatmap(centros_hc_zmb,  "Hurto a Comercio") %>%
+  agregar_heatmap(centros_ha_zmb,  "Hurto a Automotores") %>%
+  agregar_heatmap(centros_hm_zmb,  "Hurto a Motocicletas") %>%
+  agregar_heatmap(centros_hom_zmb, "Homicidios") %>%
+  agregar_heatmap(centros_total_zmb, "Total Delitos")
+
+# Control de capas
+mapa_zmb <- mapa_zmb %>%
+  addLayersControl(
+    baseGroups = c("Hurto a Personas", "Hurto a Residencias", "Hurto a Comercio",
+                   "Hurto a Automotores", "Hurto a Motocicletas", "Homicidios", "Total Delitos"),
+    options = layersControlOptions(collapsed = FALSE)
+  )
+
+# Mostrar mapa
+mapa_zmb
+```
+
+
+```{r,warning=FALSE}
+library(osmdata)
+library(osmextract)
+barranquilla <- st_union(Delitos_Barranquilla) %>%
+  st_make_valid() %>%
+  st_transform(4326)
+
+vias_baq <- oe_read(
+  file = "data/spatial/colombia-latest.osm.pbf",
+  layer = "lines",
+  boundary = barranquilla,    # Aquí sí es un POLYGON válido
+  boundary_type = "clipsrc",  # Recorta exactamente a la ciudad
+  stringsAsFactors = FALSE
+)
+plot(st_geometry(barranquilla), border = "black")
+plot(st_geometry(vias_baq), col = "blue", add = TRUE)
+
+# Filtrar vías principales
+vias_principales <- vias_baq %>%
+  filter(highway %in% c("motorway", "trunk", "primary", "secondary", "tertiary")) %>%
+  st_make_valid()
+```
+```{r}
+Delitos_Barranquilla <- st_transform(Delitos_Barranquilla, 4326)
+vias_principales <- st_transform(vias_principales, 4326)
+
+# Calcular centroide de cada manzana
+centros_manzanas <- st_centroid(Delitos_Barranquilla)
+
+# Calcular distancia mínima a vías principales
+distancias <- st_distance(centros_manzanas, vias_principales)
+
+# Asignar distancia mínima a cada manzana (en metros)
+Delitos_Barranquilla$distancia_via_principal <- apply(distancias, 1, min)
+```
+```{r}
+
+Delitos_Barranquilla <- Delitos_Barranquilla %>%
+  mutate(
+    categoria_densidad = case_when(
+      MANZ_VIV <= 10 ~ "Muy baja",
+      MANZ_VIV <= 30 ~ "Baja",
+      MANZ_VIV <= 60 ~ "Media",
+      MANZ_VIV <= 100 ~ "Alta",
+      TRUE ~ "Muy alta"
+    ),
+    categoria_escape = case_when(
+      distancia_via_principal <= 50 ~ "Muy cerca",
+      distancia_via_principal <= 100 ~ "Cerca",
+      distancia_via_principal <= 200 ~ "Intermedia",
+      distancia_via_principal <= 400 ~ "Lejos",
+      TRUE ~ "Muy lejos"
+    )
+  )
+```
+
+```{r}
+Delitos_Barranquilla <- Delitos_Barranquilla %>%
+  mutate(
+    total_hurtos = rowSums(st_drop_geometry(select(., 
+      sum_22HP, sum_23HP, sum_24HP,
+      sum_22HR, sum_23HR, sum_24HR,
+      sum_22HC, sum_23HC, sum_24HC,
+      sum_22HA, sum_23HA, sum_24HA,
+      sum_22HM, sum_23HM, sum_24HM
+    )), na.rm = TRUE)
+  )
+```
+```{r}
+tabla_hipotesis <- Delitos_Barranquilla %>%
+  st_drop_geometry() %>%
+  group_by(categoria_densidad, categoria_escape) %>%
+  summarise(
+    promedio_hurtos = mean(total_hurtos, na.rm = TRUE),
+    total_manzanas = n(),
+    .groups = "drop"
+  )
+```
+```{r}
+tabla_hipotesis <- tabla_hipotesis %>%
+  mutate(
+    categoria_escape = factor(categoria_escape, levels = c("Muy cerca", "Cerca", "Intermedia", "Lejos", "Muy lejos")),
+    categoria_densidad = factor(categoria_densidad, levels = c("Muy baja", "Baja", "Media", "Alta", "Muy alta"))
+  )
+ggplot(tabla_hipotesis, aes(x = categoria_escape, y = categoria_densidad, fill = promedio_hurtos)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient(low = "yellow", high = "red") +
+  labs(
+    title = "Promedio de hurtos según densidad y cercanía a vías principales",
+    x = "Cercanía a vías principales (escape)",
+    y = "Densidad de manzana (nº viviendas)",
+    fill = "Prom. hurtos"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+tabla_hipotesis_delitos <- Delitos_Barranquilla %>%
+  st_drop_geometry() %>%
+  group_by(categoria_densidad, categoria_escape) %>%
+  summarise(
+    promedio_delitos = mean(total_delitos, na.rm = TRUE),
+    total_manzanas = n(),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    categoria_escape = factor(categoria_escape, levels = c("Muy cerca", "Cerca", "Intermedia", "Lejos", "Muy lejos")),
+    categoria_densidad = factor(categoria_densidad, levels = c("Muy baja", "Baja", "Media", "Alta", "Muy alta"))
+  )
+
+ggplot(tabla_hipotesis_delitos, aes(x = categoria_escape, y = categoria_densidad, fill = promedio_delitos)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient(low = "yellow", high = "red") +
+  labs(
+    title = "Promedio de delitos según densidad y cercanía a vías principales",
+    x = "Cercanía a vías principales (escape)",
+    y = "Densidad de manzana (nº viviendas)",
+    fill = "Prom. delitos"
+  ) +
+  theme_minimal()
+```
+
+
+```{r}
+pal_escape <- colorFactor(
+  palette = c("Cercana" = "blue", "Intermedia" = "lightblue", "Lejana" = "white"),
+  domain = Delitos_Barranquilla$escape_simple
+)
+gradiente_personalizado <- c("0.2" = "yellow", "0.5" = "orange", "1.0" = "red")
+
+agregar_heatmap_custom <- function(mapa, datos, nombre_capa, intensidad_exp = 4) {
+  addHeatmap(
+    map = mapa,
+    data = datos,
+    lng = ~st_coordinates(datos)[,1],
+    lat = ~st_coordinates(datos)[,2],
+    intensity = ~(valor)^intensidad_exp,
+    radius = 25,
+    blur = 30,
+    group = nombre_capa,
+    max = max((datos$valor)^2, na.rm = TRUE),
+    gradient = gradiente_personalizado
+  )
+}
+```
+```{r}
+centros_total <- Delitos_Barranquilla %>%
+  st_centroid() %>%
+  mutate(valor = total_hurtos)
+
+# Asegurar factor ordenado
+Delitos_Barranquilla <- Delitos_Barranquilla %>%
+  mutate(
+    escape_simple = case_when(
+      distancia_via_principal <= 100 ~ "Cercana",
+      distancia_via_principal <= 400 ~ "Intermedia",
+      TRUE ~ "Lejana"
+    ),
+    escape_simple = factor(escape_simple, levels = c("Cercana", "Intermedia", "Lejana"))
+  )
+```
+
+```{r}
+mapa_escape <- leaflet() %>%
+  addProviderTiles(providers$CartoDB.Positron) %>%
+  agregar_heatmap_custom(centros_total, "Heatmap Total Delitos", intensidad_exp = 5) %>%
+  addPolygons(
+    data = Delitos_Barranquilla,
+    fillColor = ~pal_escape(escape_simple),
+    fillOpacity = 0.5,
+    color = "black",
+    weight = 0.2,
+    group = "Cercanía a vías",
+    popup = ~paste0(
+      "<b>Cercanía:</b> ", escape_simple, "<br>",
+      "<b>Hurtos totales:</b> ", total_hurtos
+    )
+  ) %>%
+  addLayersControl(
+    baseGroups = c("Heatmap Total Delitos"),
+    overlayGroups = c("Cercanía a vías"),
+    options = layersControlOptions(collapsed = FALSE)
+  ) %>%
+  addLegend(
+    pal = pal_escape,
+    values = Delitos_Barranquilla$escape_simple,
+    position = "bottomright",
+    title = "Cercanía a vías"
+  )
+mapa_escape
+```
+
+
+
+```{r}
+datos_modelo <- Delitos_Barranquilla %>%
+  st_drop_geometry() %>%
+  select(total_delitos, MANZ_VIV, distancia_via_principal) %>%
+  filter(!is.na(total_delitos), !is.na(MANZ_VIV), !is.na(distancia_via_principal))
+```
+
+```{r}
+#modelo_ols <- lm(total_delitos ~ MANZ_VIV + distancia_via_principal, data = datos_modelo)
+#summary(modelo_ols)
+```
+
+```{r}
+library(spdep)
+#coords <- st_coordinates(st_centroid(Delitos_Barranquilla))
+#nb <- knn2nb(knearneigh(coords, k = 6))
+#lw <- nb2listw(nb, style = "W")
+
+# Residuales del modelo OLS
+#residuos <- residuals(modelo_ols)
+
+# Prueba de Moran sobre los residuales
+#moran.test(residuos, lw)
+```
+
+```{r}
+library(spatialreg)
+library(sf)
+#modelo_lag <- lagsarlm(total_delitos ~ MANZ_VIV + distancia_via_principal, data = datos_modelo, listw = lw)
+#summary(modelo_lag)
+```
+
+## Data Barranquilla
+```{r}
+Delitos_Barranquilla <- Delitos_Barranquilla %>%
+  mutate(
+    total_2022 = rowSums(st_drop_geometry(select(., starts_with("sum_22"))), na.rm = TRUE),
+    total_2023 = rowSums(st_drop_geometry(select(., starts_with("sum_23"))), na.rm = TRUE),
+    total_2024 = rowSums(st_drop_geometry(select(., starts_with("sum_24"))), na.rm = TRUE)
+  )
+
+# Summarize per year
+total_crimes_year <- Delitos_Barranquilla %>%
+  st_drop_geometry() %>%  # Aquí eliminamos la columna sf
+  summarise(
+    `2022` = sum(total_2022, na.rm = TRUE),
+    `2023` = sum(total_2023, na.rm = TRUE),
+    `2024` = sum(total_2024, na.rm = TRUE)
+  ) %>%
+  tidyr::pivot_longer(cols = everything(), names_to = "Year", values_to = "Crimes")
+
+ggplot(total_crimes_year, aes(x = Year, y = Crimes, fill = Year)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Total Crimes per Year in Barranquilla", y = "Number of Crimes") +
+  theme_minimal()
+
+```
+```{r}
+library(stringr)
+
+tipo_crimen_dict <- c(
+  "HOM" = "Homicidio",
+  "HP"  = "Personas",
+  "HR"  = "Residencias",
+  "HC"  = "Comercio",
+  "HA"  = "Automotores",
+  "HM"  = "Motocicletas"
+)
+# Pivot data for plotting by type
+
+Delitos_Barranquilla_long <- Delitos_Barranquilla %>%
+  st_drop_geometry() %>%
+  select(starts_with("sum_")) %>%
+  summarise(across(everything(), sum, na.rm = TRUE)) %>%
+  pivot_longer(cols = everything(), names_to = "type_year", values_to = "total") %>%
+  mutate(
+    Year = str_extract(type_year, "\\d{2}") %>% paste0("20", .),
+    Code = str_extract(type_year, "[A-Z]+$"),
+    Type = tipo_crimen_dict[Code]
+  ) %>%
+  filter(!is.na(Type), Year %in% c("2022", "2023", "2024"))
+
+ggplot(Delitos_Barranquilla_long, aes(x = Type, y = total, fill = Year)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(
+    title = "Delitos por Tipo y Año en Barranquilla",
+    x = "Tipo de Delito",
+    y = "Total"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+
+```
+
+```{r}
+Delitos_Atlantico_NoCapital_long <- Delitos_Atlantico_NoCapital %>%
+  st_drop_geometry() %>%
+  select(starts_with("sum_")) %>%
+  summarise(across(everything(), sum, na.rm = TRUE)) %>%
+  pivot_longer(cols = everything(), names_to = "type_year", values_to = "total") %>%
+  mutate(
+    Year = stringr::str_extract(type_year, "\\d{2}") %>% paste0("20", .),
+    Code = stringr::str_extract(type_year, "[A-Z]+$"),
+    Type = tipo_crimen_dict[Code]
+  ) %>%
+  filter(!is.na(Type), Year %in% c("2022", "2023", "2024"))
+ggplot(Delitos_Atlantico_NoCapital_long, aes(x = Type, y = total, fill = Year)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(
+    title = "Delitos por Tipo y Año – Atlántico sin capital",
+    x = "Tipo de Delito",
+    y = "Total"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+```
+
+
+```{r}
+Delitos_Atlantico_total_long <- delitos_data_Atlantico %>%
+  st_drop_geometry() %>%
+  select(starts_with("sum_")) %>%
+  summarise(across(everything(), sum, na.rm = TRUE)) %>%
+  pivot_longer(cols = everything(), names_to = "type_year", values_to = "total") %>%
+  mutate(
+    Year = stringr::str_extract(type_year, "\\d{2}") %>% paste0("20", .),
+    Code = stringr::str_extract(type_year, "[A-Z]+$"),
+    Type = tipo_crimen_dict[Code]
+  ) %>%
+  filter(!is.na(Type), Year %in% c("2022", "2023", "2024"))
+ggplot(Delitos_Atlantico_total_long, aes(x = Type, y = total, fill = Year)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(
+    title = "Delitos por Tipo y Año – Departamento del Atlántico",
+    x = "Tipo de Delito",
+    y = "Total"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+```
+```{r}
+# Añadir grupo
+Delitos_Barranquilla_long$Grupo <- "Barranquilla"
+Delitos_Atlantico_total_long$Grupo <- "Atlántico"
+Delitos_Atlantico_NoCapital_long$Grupo <- "Atlántico sin capital"
+
+# Unir
+df_comparativo <- bind_rows(
+  Delitos_Barranquilla_long,
+  Delitos_Atlantico_total_long,
+  Delitos_Atlantico_NoCapital_long
+)
+
+# Agrupar por grupo y año
+df_comparativo_total <- df_comparativo %>%
+  group_by(Grupo, Year) %>%
+  summarise(total = sum(total, na.rm = TRUE), .groups = "drop")
+```
+
+```{r}
+# 2022
+ggplot(df_comparativo_total %>% filter(Year == "2022"),
+       aes(x = Grupo, y = total, fill = Grupo)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Total de Delitos por Región – 2022", x = NULL, y = "Total de delitos") +
+  theme_minimal()
+
+# 2023
+ggplot(df_comparativo_total %>% filter(Year == "2023"),
+       aes(x = Grupo, y = total, fill = Grupo)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Total de Delitos por Región – 2023", x = NULL, y = "Total de delitos") +
+  theme_minimal()
+
+# 2024
+ggplot(df_comparativo_total %>% filter(Year == "2024"),
+       aes(x = Grupo, y = total, fill = Grupo)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Total de Delitos por Región – 2024", x = NULL, y = "Total de delitos") +
+  theme_minimal()
+```
+
+```{r}
+Delitos_Barranquilla <- Delitos_Barranquilla %>%
+  mutate(
+    ID_manzana = row_number(),  # AÑADIR PRIMERO el identificador
+    total_2022 = rowSums(st_drop_geometry(select(., starts_with("sum_22"))), na.rm = TRUE),
+    total_2023 = rowSums(st_drop_geometry(select(., starts_with("sum_23"))), na.rm = TRUE),
+    total_2024 = rowSums(st_drop_geometry(select(., starts_with("sum_24"))), na.rm = TRUE)
+  )
+delitos_manzana_largo <- Delitos_Barranquilla %>%
+  mutate(ID_manzana = row_number()) %>%
+  select(ID_manzana, total_2022, total_2023, total_2024) %>%
+  pivot_longer(
+    cols = starts_with("total_"),
+    names_to = "anio",
+    values_to = "total"
+  ) %>%
+  mutate(
+    anio = as.numeric(stringr::str_extract(anio, "\\d{4}"))
+  )
+```
+
+
 
 
 
